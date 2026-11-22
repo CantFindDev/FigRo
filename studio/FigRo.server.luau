@@ -384,7 +384,7 @@ local function snapshot(label: string): Json
 	local suffix = StarterGui:GetAttribute("FigRoPanelSuffix")
 	return {
 		label = label,
-		place = game.Name,
+		place = (string.gsub(game.Name, "%s*@.*$", "")),
 		reference = if typeof(reference) == "Vector2" then { x = reference.X, y = reference.Y } else nil,
 		panelSuffix = if typeof(suffix) == "string" and suffix ~= "" then suffix else nil,
 		full = label == StarterGui:GetAttribute("FigRoFullSnapshot"),
@@ -421,11 +421,42 @@ local function export(label: string)
 	end
 end
 
+--- Exports made this session per label, so repeated exports of one view get "Shop 2", "Shop 3".
+local labelCounts: { [string]: number } = {}
+
+--- A readable label for what's on screen: the open panels (visible children of the panel ScreenGuis), else the
+--- topmost enabled ScreenGui showing something, numbered when that view was already exported this session.
+local function autoLabel(): string
+	local playerGui = (Players.LocalPlayer :: Player):WaitForChild("PlayerGui")
+	local suffix = StarterGui:GetAttribute("FigRoPanelSuffix")
+	local panels, top, topOrder = {}, nil, -math.huge
+	for _, gui in playerGui:GetChildren() do
+		if not gui:IsA("ScreenGui") or not gui.Enabled then
+			continue
+		end
+		local isPanel = typeof(suffix) == "string" and suffix ~= "" and string.sub(gui.Name, -#suffix) == suffix
+		for _, child in gui:GetChildren() do
+			if child:IsA("GuiObject") and child.Visible then
+				if isPanel then
+					table.insert(panels, child.Name)
+				elseif gui.DisplayOrder > topOrder then
+					top, topOrder = gui.Name, gui.DisplayOrder
+				end
+			end
+		end
+	end
+	table.sort(panels)
+	local base = if #panels > 0 then table.concat(panels, " + ") else top or "Screen"
+	local n = (labelCounts[base] or 0) + 1
+	labelCounts[base] = n
+	return if n == 1 then base else `{base} {n}`
+end
+
 local toolbar = plugin:CreateToolbar("FigRo")
 local button = toolbar:CreateButton("Export UI", "Send the live UI to the Figma receiver", "rbxasset://textures/ui/GuiImagePlaceholder.png")
 button.ClickableWhenViewportHidden = true
 button.Click:Connect(function()
-	export("Screen " .. os.date("%H%M%S"))
+	export(autoLabel())
 end)
 
 local playerGui = (Players.LocalPlayer :: Player):WaitForChild("PlayerGui")
