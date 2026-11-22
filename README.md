@@ -39,24 +39,26 @@ its images that the Figma plugin opens.
 
 ## Install
 
-```sh
+Clone the repo and double-click `install.bat`, or from a terminal:
+
+```bat
 git clone https://github.com/CantFindDev/FigRo.git
 cd FigRo
-./install.sh
+install.bat
 ```
 
-The script builds `FigRo.rbxm` into Studio's local Plugins folder (Windows and macOS). Restart Studio and a FigRo
-toolbar appears.
+The script builds `FigRo.rbxm` into Studio's local Plugins folder. Restart Studio and a FigRo toolbar appears. On
+macOS, run `rojo build studio.project.json -o ~/Documents/Roblox/Plugins/FigRo.rbxm` instead.
 
 Then, once, in the Figma desktop app: **Plugins > Development > Import plugin from manifest**, and choose
 `figma-plugin/manifest.json`.
 
 ## Usage
 
-Start the receiver and leave it running:
+Start the receiver (double-click `run.bat`, or `node receiver.mjs` on macOS) and leave it running:
 
-```sh
-node receiver.mjs
+```bat
+run.bat
 ```
 
 ### Roblox to Figma
@@ -89,7 +91,7 @@ game.Players.LocalPlayer.PlayerGui:SetAttribute("FigmaExport", "Shop")
 game.StarterGui:SetAttribute("FigmaImport", true)
 ```
 
-To rebuild `out/bundle.json` without starting the server, run `node receiver.mjs bundle`.
+To rebuild `out/bundle.json` without starting the server, run `run.bat bundle`.
 
 ## Per-game settings
 
