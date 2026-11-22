@@ -127,7 +127,9 @@ One page holds everything, in Sections:
 
 ## Limitations
 
-- Fonts Figma doesn't have are replaced by the closest available one.
+- The receiver installs the Roblox fonts your UI uses (from Studio's built-in fonts) into your user fonts; restart
+  Figma once after it does. Fonts Studio downloads on demand (custom fonts, some weights) aren't on disk, so Figma
+  substitutes the closest one it has.
 - Images drawn or pasted in Figma come back as files in `out/` and must be uploaded to Roblox by hand.
 - Layouts (UIListLayout, UIGridLayout) are captured as the positions they produced, not as Figma auto layout.
 - Roblox-only content (scripts, tweens, 3D in ViewportFrames) has no Figma equivalent; ViewportFrames export as

@@ -2,12 +2,16 @@
 // references, and writes out/bundle.json (all snapshots plus base64 images) for the Figma plugin to import.
 // It also takes pages sent back from the Figma plugin (POST /figma), saving out/figma/latest.json and any new images
 // as out/figma/images/<hash>.png, and serves that JSON to the Studio plugin's "Import from Figma" (GET /figma).
-// Run: node receiver.mjs   (no dependencies); add `bundle` to only rebuild bundle.json and exit.
+// It also installs the Roblox fonts the snapshots use from Studio's install into the user's fonts, so Figma draws text
+// in the exact font instead of a substitute.
+// Run: node receiver.mjs   (no dependencies); add `bundle` to only rebuild bundle.json (and install fonts) and exit.
 
 import { createServer } from "node:http";
-import { mkdir, readFile, readdir, writeFile, access } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { mkdir, readFile, readdir, writeFile, access, copyFile } from "node:fs/promises";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { execFile } from "node:child_process";
 
 const PORT = 34873;
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "out");
@@ -18,6 +22,18 @@ const FROM_FIGMA = join(OUT, "figma");
 const THUMB = "420x420";
 /** Studio's install folders, newest last, for rbxasset:// textures. */
 const VERSIONS = join(process.env.LOCALAPPDATA ?? "", "Roblox", "Versions");
+
+/** Studio's content folders, newest first: Windows installs under Versions, macOS inside the app bundle. */
+async function contentDirs() {
+  if (process.platform === "darwin") return ["/Applications/RobloxStudio.app/Contents/Resources/content"];
+  const versions = await readdir(VERSIONS).catch(() => []);
+  return versions.reverse().map((v) => join(VERSIONS, v, "content"));
+}
+/** Per-user font folder the OS (and Figma's font helper) reads. */
+const USER_FONTS =
+  process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Windows", "Fonts")
+  : process.platform === "darwin" ? join(homedir(), "Library", "Fonts")
+  : join(homedir(), ".local", "share", "fonts");
 
 /** File-safe name for a snapshot label or image id. */
 const safe = (s) => s.replace(/[^\w.-]+/g, "_").slice(0, 80);
@@ -96,6 +112,66 @@ async function fetchImages(ids) {
   for (const id of missing.filter((i) => i.startsWith("rbxasset://") && !i.endsWith(".dds"))) await fetchBuiltin(id);
 }
 
+/** Every Roblox font family name used by text in a snapshot. */
+function collectFonts(snap, into) {
+  const walk = (n) => {
+    if (n.text) into.add(n.text.font);
+    n.kids?.forEach(walk);
+  };
+  snap.guis.forEach((g) => g.kids.forEach(walk));
+  return into;
+}
+
+/** Fonts already handled this run, so each snapshot only checks new families. */
+const fontsDone = new Set();
+
+/** Installs the font files of `families` from Studio's built-in fonts into the user's fonts. Families Studio
+ * downloads on demand (rbxassetid faces, custom fonts) aren't on disk and are skipped. */
+async function installFonts(families) {
+  const dirs = await contentDirs();
+  const added = [];
+  for (const family of families) {
+    if (fontsDone.has(family)) continue;
+    fontsDone.add(family);
+    let faces = null, dir = null;
+    for (const d of dirs) {
+      try {
+        faces = JSON.parse(await readFile(join(d, "fonts", "families", safe(family) + ".json"), "utf8")).faces;
+        dir = d;
+        break;
+      } catch {}
+    }
+    if (!faces) continue;
+    for (const face of faces) {
+      const rel = face.assetId.match(/^rbxasset:\/\/(fonts\/[^/]+\.(?:ttf|otf))$/i);
+      if (!rel) continue;
+      const target = join(USER_FONTS, basename(rel[1]));
+      try {
+        await access(target);
+        continue;
+      } catch {}
+      try {
+        await mkdir(USER_FONTS, { recursive: true });
+        await copyFile(join(dir, rel[1]), target);
+        if (process.platform === "win32") await registerFont(target);
+        added.push(basename(target));
+      } catch (err) {
+        console.warn(`  could not install font ${basename(target)}: ${err.message}`);
+      }
+    }
+  }
+  if (added.length) console.log(`installed fonts: ${added.join(", ")}. Restart Figma so it sees them.`);
+}
+
+/** Registers a per-user font file with Windows, which only lists fonts named in this registry key. */
+function registerFont(file) {
+  const name = basename(file).replace(/\.(ttf|otf)$/i, "") + (file.toLowerCase().endsWith(".otf") ? " (OpenType)" : " (TrueType)");
+  const key = "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+  return new Promise((resolve, reject) =>
+    execFile("reg", ["add", key, "/v", name, "/t", "REG_SZ", "/d", file, "/f"], (err) => (err ? reject(err) : resolve())),
+  );
+}
+
 /** Drops hidden ScreenGuis and GuiObjects, so each panel page holds just that panel's visible layers. */
 function prune(snap) {
   const keep = (n) => n.visible && { ...n, kids: n.kids?.map(keep).filter(Boolean) };
@@ -113,6 +189,7 @@ async function writeBundle() {
   snapshots.sort((a, b) => !!b.full - !!a.full);
   const ids = new Set();
   snapshots.forEach((s) => collectImages(s, ids));
+  await installFonts(snapshots.reduce((set, s) => collectFonts(s, set), new Set()));
   const images = {};
   for (const id of ids) {
     try {
