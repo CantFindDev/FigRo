@@ -32,7 +32,7 @@ const INSET = 58;
 const GAP = 200, COLUMNS = 4;
 
 /** Inner padding of each section around its frames, and the space between stacked sections. */
-const SECTION_PAD = 300, SECTION_GAP = 600;
+const SECTION_PAD = 75, SECTION_GAP = 600;
 
 const rgb = (c) => ({ r: c[0] / 255, g: c[1] / 255, b: c[2] / 255 });
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -280,6 +280,17 @@ figma.on("currentpagechange", sendPages);
 /** Lowest edge of what's already on `page`, so a new import lands below it instead of on top. */
 const bottomOf = (page) => page.children.reduce((y, n) => Math.max(y, n.y + n.height + SECTION_GAP), 0);
 
+/** Sizes each section around its grid of frames and stacks them downwards from `top`. */
+function arrange(sections, top) {
+  for (const section of sections) {
+    const n = section.children.length, cols = Math.min(Math.max(n, 1), COLUMNS), rows = Math.max(1, Math.ceil(n / COLUMNS));
+    section.resizeWithoutConstraints(2 * SECTION_PAD + cols * SCREEN_W + (cols - 1) * GAP, 2 * SECTION_PAD + rows * SCREEN_H + (rows - 1) * GAP);
+    section.x = 0;
+    section.y = top;
+    top += section.height + SECTION_GAP;
+  }
+}
+
 figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
   if (cmd === "export") return exportPage();
   if (cmd === "pages") return sendPages();
@@ -311,13 +322,18 @@ figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
       }
       return sections.get(name);
     };
+    const screenIn = (sectionName, name, component) => {
+      const screen = newScreen(sectionFor(sectionName), name, component);
+      arrange(sections.values(), start);
+      return screen;
+    };
     const hudKey = (s) => hudGuis(s).map((g) => g.name).join(",");
     const huds = new Map();
     const hudFor = async (snap) => {
       const key = hudKey(snap);
       if (!huds.has(key)) {
         const source = shown.find((s) => !openGuis(s).length && hudKey(s) === key) || snap;
-        const comp = newScreen(sectionFor("HUD"), `${source.label} HUD`, true);
+        const comp = screenIn("HUD", `${source.label} HUD`, true);
         await buildLayers(comp, source, hudGuis(source));
         huds.set(key, { comp, source });
       }
@@ -325,7 +341,7 @@ figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
     };
     const panelFrame = async (name, snap, gui) => {
       const hud = await hudFor(snap);
-      const screen = newScreen(sectionFor(gui.name), name);
+      const screen = screenIn(gui.name, name);
       const bg = hud.createInstance();
       screen.appendChild(bg);
       bg.x = 0;
@@ -353,15 +369,7 @@ figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
     const sources = new Set([...huds.values()].map((h) => h.source));
     for (const s of shown) {
       if (openGuis(s).length || sources.has(s)) continue;
-      await buildLayers(newScreen(sectionFor("Screens"), s.label), s, s.guis);
-    }
-    let top = start;
-    for (const section of sections.values()) {
-      const n = section.children.length, cols = Math.min(Math.max(n, 1), COLUMNS), rows = Math.max(1, Math.ceil(n / COLUMNS));
-      section.resizeWithoutConstraints(2 * SECTION_PAD + cols * SCREEN_W + (cols - 1) * GAP, 2 * SECTION_PAD + rows * SCREEN_H + (rows - 1) * GAP);
-      section.x = 0;
-      section.y = top;
-      top += section.height + SECTION_GAP;
+      await buildLayers(screenIn("Screens", s.label), s, s.guis);
     }
     figma.viewport.scrollAndZoomIntoView([...sections.values()]);
     sendPages();
@@ -369,7 +377,7 @@ figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
     say(`Done: ${ctx.count} layers in ${sections.size} sections.${note}`);
     figma.notify(`Imported ${ctx.count} layers.${note}`);
   } catch (err) {
-    say("Import failed: " + (err && err.message ? err.message : err));
+    say("Import failed: " + (err && err.message ? err.message : err) + (err && err.stack ? "\n" + err.stack : ""));
   }
 };
 
