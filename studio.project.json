@@ -1,0 +1,7 @@
+{
+  "name": "FigRo",
+  "tree": {
+    "$path": "studio/FigRo.server.luau",
+    "FigmaImport": { "$path": "studio/FigmaImport.luau" }
+  }
+}

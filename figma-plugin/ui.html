@@ -1,0 +1,122 @@
+<!-- FigRo's window: picks a bundle.json, decodes its images and hands everything to code.js with the chosen target page;
+     also posts frames back to receiver.mjs for the Studio plugin's "Import from Figma". -->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; gap: 12px; font: 11px/16px Inter, system-ui, sans-serif; color: var(--figma-color-text); background: var(--figma-color-bg); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .col + .col { padding-left: 16px; border-left: 1px solid var(--figma-color-border); }
+  h2 { margin: 0; font-size: 11px; font-weight: 600; }
+  p { margin: 0; color: var(--figma-color-text-secondary); }
+  code { font: 10px/16px "Roboto Mono", monospace; }
+  .row { display: flex; gap: 8px; }
+  button, select { height: 32px; border-radius: 6px; font: 500 11px Inter, system-ui, sans-serif; }
+  button { padding: 0 12px; cursor: pointer; flex: 1; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  select { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid var(--figma-color-border); color: var(--figma-color-text); background: var(--figma-color-bg); }
+  .primary { border: none; color: var(--figma-color-text-onbrand); background: var(--figma-color-bg-brand); }
+  .primary:hover:enabled { background: var(--figma-color-bg-brand-hover); }
+  .secondary { border: 1px solid var(--figma-color-border-strong); color: var(--figma-color-text); background: var(--figma-color-bg); }
+  .secondary:hover:enabled { background: var(--figma-color-bg-hover); }
+  #log { flex: 1; padding: 8px; border-radius: 6px; overflow: hidden; white-space: pre-wrap; background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary); }
+</style>
+<div class="cols">
+  <div class="col">
+    <h2>Roblox to Figma</h2>
+    <p>Pick <code>out/bundle.json</code> and the page to build it on.</p>
+    <input type="file" id="file" accept=".json" hidden />
+    <div class="row"><button class="secondary" id="pick">Choose bundle.json</button></div>
+    <div class="row">
+      <select id="page" title="Page to import to; it is renamed after the game"></select>
+      <button class="primary" id="import" disabled>Import</button>
+    </div>
+  </div>
+  <div class="col">
+    <h2>Figma to Roblox</h2>
+    <p>Sends the selected frames or sections, or the whole page if nothing is selected. Needs <code>node receiver.mjs</code>.</p>
+    <div class="row"><button class="secondary" id="send">Send to Roblox</button></div>
+  </div>
+</div>
+<div id="log">Ready.</div>
+<script>
+  const log = document.getElementById("log");
+  const pick = document.getElementById("pick");
+  const page = document.getElementById("page");
+  const importButton = document.getElementById("import");
+  /** The decoded bundle waiting for the Import button. */
+  let pending = null;
+
+  pick.onclick = () => document.getElementById("file").click();
+  document.getElementById("file").onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    log.textContent = "Reading " + file.name + "...";
+    try {
+      const bundle = JSON.parse(await file.text());
+      if (!Array.isArray(bundle.snapshots)) throw new Error("no snapshots");
+      const images = {};
+      for (const [id, b64] of Object.entries(bundle.images || {})) {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        images[id] = bytes;
+      }
+      pending = { snapshots: bundle.snapshots, images };
+      pick.textContent = file.name;
+      importButton.disabled = false;
+      log.textContent = `${bundle.snapshots.length} snapshots ready. Choose a page and click Import.`;
+    } catch (err) {
+      log.textContent = "Not a bundle: " + err;
+    }
+  };
+  page.onfocus = () => parent.postMessage({ pluginMessage: { cmd: "pages" } }, "*");
+  importButton.onclick = () => {
+    if (!pending) return;
+    importButton.disabled = true;
+    parent.postMessage({ pluginMessage: { ...pending, pageId: page.value } }, "*");
+  };
+  document.getElementById("send").onclick = () => parent.postMessage({ pluginMessage: { cmd: "export" } }, "*");
+
+  /** Fills the page picker, keeping the user's choice when it still exists, else the open page. */
+  function showPages(pages, current) {
+    const keep = page.value;
+    page.replaceChildren(...pages.map((p) => new Option(p.name, p.id)), new Option("+ New page", ""));
+    page.value = page.dataset.ready && (keep === "" || pages.some((p) => p.id === keep)) ? keep : current;
+    page.dataset.ready = "1";
+  }
+
+  /** Base64 of `bytes`, in slices so large images don't overflow the argument limit. */
+  function base64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  /** Posts exported frames to the receiver; text/plain keeps the request simple, so no CORS preflight. */
+  async function upload({ snapshots, images }, warnings) {
+    const encoded = {};
+    for (const [id, bytes] of Object.entries(images)) encoded[id] = base64(bytes);
+    log.textContent = "Sending...";
+    try {
+      const res = await fetch("http://localhost:34873/figma", { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ snapshots, images: encoded }) });
+      if (!res.ok) throw new Error(await res.text());
+      const names = snapshots.map((s) => s.label).join(", ");
+      const extra = Object.keys(encoded).length ? ` ${Object.keys(encoded).length} new image(s) need uploading.` : "";
+      log.textContent = `Sent ${names}. In Studio click FigRo > Import from Figma.${extra}` + (warnings.length ? "\n\n" + warnings.join("\n") : "");
+    } catch (err) {
+      log.textContent = "Send failed, is receiver.mjs running? " + err;
+    }
+  }
+
+  onmessage = (e) => {
+    const msg = e.data.pluginMessage;
+    if (!msg) return;
+    if (msg.pages) showPages(msg.pages, msg.current);
+    if (msg.log) {
+      log.textContent = msg.log;
+      if (/^(Done|Import failed|This file)/.test(msg.log)) importButton.disabled = !pending;
+    }
+    if (msg.upload) upload(msg.upload, msg.warnings);
+  };
+</script>
