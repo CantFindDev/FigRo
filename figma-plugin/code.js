@@ -204,9 +204,13 @@ async function build(n, parent) {
   return f;
 }
 
-/** Figma constraints guessed from where a top-level panel sits in its ScreenGui, so resizing the screen frame moves it
- * the way Roblox anchoring would. Only a guess: the snapshot holds boxes, not the original UDims. */
+/** Figma constraints for a top-level object from its captured Position and Size scales, so resizing the screen frame
+ * moves it the way Roblox anchoring would; guessed from where it sits for snapshots older than those fields. */
 function guessConstraints(n, W, H) {
+  if (n.px !== undefined) {
+    const exact = (p, s) => (s > 0 ? (s >= 1 && p === 0 ? "STRETCH" : "SCALE") : p === 0 ? "MIN" : p === 1 ? "MAX" : p === 0.5 ? "CENTER" : "SCALE");
+    return { horizontal: exact(n.px, n.sx), vertical: exact(n.py, n.sy) };
+  }
   const axis = (pos, len, full) =>
     len >= full - 1 ? "STRETCH" : Math.abs(pos + len / 2 - full / 2) <= Math.max(1, full * 0.03) ? "CENTER" : pos + len / 2 > full / 2 ? "MAX" : "MIN";
   return { horizontal: axis(n.x, n.w, W), vertical: axis(n.y, n.h, H) };

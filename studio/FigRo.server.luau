@@ -197,6 +197,10 @@ local function node(obj: GuiObject, origin: Vector2, k: number): Json
 		h = r2(size.Y / s),
 		visible = obj.Visible,
 		z = obj.ZIndex,
+		px = obj.Position.X.Scale,
+		py = obj.Position.Y.Scale,
+		sx = obj.Size.X.Scale,
+		sy = obj.Size.Y.Scale,
 	}
 	if obj.Rotation ~= 0 then
 		out.rot = r2(obj.Rotation)
