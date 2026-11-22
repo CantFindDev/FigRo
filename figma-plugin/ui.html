@@ -23,11 +23,11 @@
 <div class="cols">
   <div class="col">
     <h2>Roblox to Figma</h2>
-    <p>Pick <code>out/bundle.json</code> and the page to build it on.</p>
+    <p>Pick <code>out/bundle.json</code> and the page to build it on. That page is wiped first.</p>
     <input type="file" id="file" accept=".json" hidden />
     <div class="row"><button class="secondary" id="pick">Choose bundle.json</button></div>
     <div class="row">
-      <select id="page" title="Page to import to; it is renamed after the game"></select>
+      <select id="page" title="Page to import to: everything on it is replaced, and it is renamed after the game"></select>
       <button class="primary" id="import" disabled>Import</button>
     </div>
   </div>

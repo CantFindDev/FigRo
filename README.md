@@ -69,8 +69,8 @@ run.bat
 4. Click **Choose bundle.json** and pick `out/bundle.json`.
 5. Pick a page (or **+ New page**) and click **Import**.
 
-The page is renamed `<game> UI` and the import goes below anything already on it, so you can import again without
-losing earlier work.
+Everything already on that page is deleted and replaced, and the page is renamed `<game> UI`. Other pages are never
+touched, so keep hand-made work on a different page.
 
 ### Figma to Roblox
 

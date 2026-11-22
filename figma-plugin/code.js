@@ -277,9 +277,6 @@ const sendPages = () =>
 sendPages();
 figma.on("currentpagechange", sendPages);
 
-/** Lowest edge of what's already on `page`, so a new import lands below it instead of on top. */
-const bottomOf = (page) => page.children.reduce((y, n) => Math.max(y, n.y + n.height + SECTION_GAP), 0);
-
 /** Sizes each section around its grid of frames and stacks them downwards from `top`. */
 function arrange(sections, top) {
   for (const section of sections) {
@@ -312,7 +309,9 @@ figma.ui.onmessage = async ({ snapshots, images, cmd, pageId }) => {
     await figma.setCurrentPageAsync(page);
     await page.loadAsync();
     page.name = `${(snapshots[0] && snapshots[0].place) || "Roblox"} UI`;
-    const start = bottomOf(page);
+    say("Clearing the page...");
+    for (const node of [...page.children]) node.remove();
+    const start = 0;
     const sections = new Map();
     const sectionFor = (name) => {
       if (!sections.has(name)) {
